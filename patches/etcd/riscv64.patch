@@ -1,0 +1,161 @@
+commit b471ca2ae40800a052fe8c0ade7607656ee553ed
+Author: Aleksandr Razumov <ernado@ya.ru>
+Date:   Thu Mar 16 19:00:25 2023 +0300
+
+    feat: add riscv64 support
+    
+    Signed-off-by: Aleksandr Razumov <ernado@ya.ru>
+
+diff --git a/.github/workflows/build.yaml b/.github/workflows/build.yaml
+new file mode 100644
+index 000000000..31b774e2e
+--- /dev/null
++++ b/.github/workflows/build.yaml
+@@ -0,0 +1,66 @@
++name: Build
++on: [push, pull_request]
++permissions: read-all
++
++jobs:
++  build:
++    runs-on: ubuntu-latest
++    strategy:
++      fail-fast: false
++      matrix:
++        target:
++          - linux-amd64
++          - linux-386
++          - darwin-amd64
++          - darwin-arm64
++          - windows-amd64
++          - linux-arm
++          - linux-arm64
++          - linux-ppc64le
++          - linux-s390x
++          - linux-riscv64
++    steps:
++      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
++      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
++        with:
++          go-version: "1.19.7"
++      - env:
++          TARGET: ${{ matrix.target }}
++        run: |
++          echo "${TARGET}"
++          case "${TARGET}" in
++            linux-amd64)
++              GOARCH=amd64 PASSES='build' ./scripts/test.sh
++              ;;
++            linux-386)
++              GOARCH=386 PASSES='build' ./scripts/test.sh
++              ;;
++            darwin-amd64)
++              GOARCH=amd64 GOOS=darwin GO_BUILD_FLAGS='-v -mod=readonly' ./scripts/build.sh
++              ;;
++            darwin-arm64)
++              GOARCH=arm64 GOOS=darwin GO_BUILD_FLAGS='-v -mod=readonly' ./scripts/build.sh
++              ;;
++            windows-amd64)
++              GOARCH=amd64 GOOS=windows GO_BUILD_FLAGS='-v -mod=readonly' ./scripts/build.sh
++              ;;
++            linux-arm)
++              GOARCH=arm GO_BUILD_FLAGS='-v -mod=readonly' ./scripts/build.sh
++              ;;
++            linux-arm64)
++              GOARCH=arm64 GO_BUILD_FLAGS='-v -mod=readonly' ./scripts/build.sh
++              ;;
++            linux-riscv64)
++              GOARCH=riscv64 GO_BUILD_FLAGS='-v -mod=readonly' ./scripts/build.sh
++              ;;
++            linux-ppc64le)
++              GOARCH=ppc64le GO_BUILD_FLAGS='-v -mod=readonly' ./scripts/build.sh
++              ;;
++            linux-s390x)
++              GOARCH=s390x GO_BUILD_FLAGS='-v -mod=readonly' ./scripts/build.sh
++              ;;
++            *)
++              echo "Failed to find target"
++              exit 1
++              ;;
++          esac
+diff --git a/Dockerfile-release.riscv64 b/Dockerfile-release.riscv64
+new file mode 100644
+index 000000000..6b097751a
+--- /dev/null
++++ b/Dockerfile-release.riscv64
+@@ -0,0 +1,16 @@
++FROM --platform=linux/riscv64 scratch
++
++# TODO: use distroless once it supports riscv64
++# https://github.com/GoogleContainerTools/distroless/issues/1269
++
++ADD etcd /usr/local/bin/
++ADD etcdctl /usr/local/bin/
++ADD etcdutl /usr/local/bin/
++
++WORKDIR /var/etcd/
++WORKDIR /var/lib/etcd/
++
++EXPOSE 2379 2380
++
++# Define default command.
++CMD ["/usr/local/bin/etcd"]
+diff --git a/scripts/build-binary b/scripts/build-binary
+index f9c6f55c8..8860419d5 100755
+--- a/scripts/build-binary
++++ b/scripts/build-binary
+@@ -73,6 +73,7 @@ function main {
+       TARGET_ARCHS+=("arm64")
+       TARGET_ARCHS+=("ppc64le")
+       TARGET_ARCHS+=("s390x")
++      TARGET_ARCHS+=("riscv64")
+     fi
+ 
+     if [ ${GOOS} == "darwin" ]; then
+diff --git a/scripts/build-release.sh b/scripts/build-release.sh
+index b16004064..d8a128086 100755
+--- a/scripts/build-release.sh
++++ b/scripts/build-release.sh
+@@ -24,7 +24,7 @@ pushd "${ETCD_ROOT}" >/dev/null
+   log_callout "Building etcd binary..."
+   ./scripts/build-binary "${VERSION}"
+ 
+-  for TARGET_ARCH in "amd64" "arm64" "ppc64le" "s390x"; do
++  for TARGET_ARCH in "amd64" "arm64" "ppc64le" "s390x" "riscv64"; do
+     log_callout "Building ${TARGET_ARCH} docker image..."
+     GOOS=linux GOARCH=${TARGET_ARCH} BINARYDIR=release/etcd-${VERSION}-linux-${TARGET_ARCH} BUILDDIR=release ./scripts/build-docker "${VERSION}"
+   done
+diff --git a/scripts/release b/scripts/release
+index 543559782..c92906784 100755
+--- a/scripts/release.sh
++++ b/scripts/release.sh
+@@ -256,7 +256,7 @@ main() {
+       log_warning "login failed, retrying"
+     done
+ 
+-    for TARGET_ARCH in "amd64" "arm64" "ppc64le" "s390x"; do
++    for TARGET_ARCH in "amd64" "arm64" "ppc64le" "s390x" "riscv64"; do
+       log_callout "Pushing container images to quay.io ${RELEASE_VERSION}-${TARGET_ARCH}"
+       maybe_run docker push "quay.io/coreos/etcd:${RELEASE_VERSION}-${TARGET_ARCH}"
+       log_callout "Pushing container images to gcr.io ${RELEASE_VERSION}-${TARGET_ARCH}"
+@@ -265,7 +265,7 @@ main() {
+ 
+     log_callout "Creating manifest-list (multi-image)..."
+ 
+-    for TARGET_ARCH in "amd64" "arm64" "ppc64le" "s390x"; do
++    for TARGET_ARCH in "amd64" "arm64" "ppc64le" "s390x" "riscv64"; do
+       maybe_run docker manifest create --amend "quay.io/coreos/etcd:${RELEASE_VERSION}" "quay.io/coreos/etcd:${RELEASE_VERSION}-${TARGET_ARCH}"
+       maybe_run docker manifest annotate "quay.io/coreos/etcd:${RELEASE_VERSION}" "quay.io/coreos/etcd:${RELEASE_VERSION}-${TARGET_ARCH}" --arch "${TARGET_ARCH}"
+ 
+diff --git a/server/etcdmain/etcd.go b/server/etcdmain/etcd.go
+index 9921b89df..a3285e86a 100644
+--- a/server/etcdmain/etcd.go
++++ b/server/etcdmain/etcd.go
+@@ -472,6 +472,7 @@ func checkSupportArch() {
+ 	if runtime.GOARCH == "amd64" ||
+ 		runtime.GOARCH == "arm64" ||
+ 		runtime.GOARCH == "ppc64le" ||
++		runtime.GOARCH == "riscv64" ||
+ 		runtime.GOARCH == "s390x" {
+ 		return
+ 	}

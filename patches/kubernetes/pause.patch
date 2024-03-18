@@ -1,0 +1,27 @@
+commit 517ee658d1680cf79d1e69b50ec3558e9084ca2c
+Author: Nikolay Nikolaev <nicknickolaev@gmail.com>
+Date:   Sat Mar 23 09:05:09 2024 +0000
+
+    Build pause container for riscv64
+
+diff --git a/build/pause/Makefile b/build/pause/Makefile
+index 1c49bf2fa42..e3dd07c6a51 100644
+--- a/build/pause/Makefile
++++ b/build/pause/Makefile
+@@ -32,7 +32,7 @@ OSVERSION ?= 1809 ltsc2022
+ OUTPUT_TYPE ?= docker
+ 
+ ALL_OS = linux windows
+-ALL_ARCH.linux = amd64 arm arm64 ppc64le s390x
++ALL_ARCH.linux = amd64 arm arm64 ppc64le riscv64 s390x
+ ALL_OS_ARCH.linux = $(foreach arch, ${ALL_ARCH.linux}, linux-$(arch))
+ ALL_ARCH.windows = amd64
+ ALL_OSVERSIONS.windows := 1809 ltsc2022
+@@ -65,6 +65,7 @@ TRIPLE.linux-amd64 := x86_64-linux-gnu
+ TRIPLE.linux-arm := arm-linux-gnueabihf
+ TRIPLE.linux-arm64 := aarch64-linux-gnu
+ TRIPLE.linux-ppc64le := powerpc64le-linux-gnu
++TRIPLE.linux-riscv64 := riscv64-linux-gnu
+ TRIPLE.linux-s390x := s390x-linux-gnu
+ TRIPLE := ${TRIPLE.${OS}-${ARCH}}
+ BASE.linux := scratch

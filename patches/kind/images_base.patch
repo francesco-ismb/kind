@@ -1,0 +1,230 @@
+diff --git a/images/Makefile.common.in b/images/Makefile.common.in
+index 821d9c5..e0a1195 100644
+--- a/images/Makefile.common.in
++++ b/images/Makefile.common.in
+@@ -35,8 +35,8 @@ PLATFORMS?=linux/amd64,linux/arm64
+ OUTPUT?=
+ PROGRESS=auto
+ EXTRA_BUILD_OPT?=
+-build: ensure-buildx
+-	docker buildx build $(if $(PLATFORMS),--platform=$(PLATFORMS),) $(OUTPUT) --progress=$(PROGRESS) -t ${IMAGE} --pull --build-arg GO_VERSION=$(GO_VERSION) $(EXTRA_BUILD_OPT) .
++build:
++	docker buildx build $(if $(PLATFORMS),--platform=$(PLATFORMS),) $(OUTPUT) --progress=$(PROGRESS) -t ${IMAGE} --build-arg GO_VERSION=$(GO_VERSION) $(EXTRA_BUILD_OPT) .
+ 
+ # push the cross built image
+ push: OUTPUT=--push
+diff --git a/images/base/Dockerfile b/images/base/Dockerfile
+index e9440cb..e52301f 100644
+--- a/images/base/Dockerfile
++++ b/images/base/Dockerfile
+@@ -20,7 +20,7 @@
+ # start from debian slim, this image is reasonably small as a starting point
+ # for a kubernetes node image, it doesn't contain much (anything?) we don't need
+ # this stage will install basic files and packages
+-ARG BASE_IMAGE=debian:bookworm-slim
++ARG BASE_IMAGE=debian:unstable-slim
+ FROM $BASE_IMAGE as base
+ 
+ # copy in static files
+@@ -85,7 +85,7 @@ RUN chmod 755 /kind/bin && \
+     && rm -f /lib/systemd/system/sockets.target.wants/*initctl* \
+     && rm -f /lib/systemd/system/basic.target.wants/* \
+     && echo "ReadKMsg=no" >> /etc/systemd/journald.conf \
+-    && ln -s "$(which systemd)" /sbin/init
++    && ln -s /usr/lib/systemd/systemd /sbin/init
+ 
+ # NOTE: systemd-binfmt.service will register things into binfmt_misc which is kernel-global
+ RUN echo "Enabling / Disabling services ... " \
+@@ -108,10 +108,9 @@ COPY --chmod=0755 scripts/third_party/gimme/gimme /usr/local/bin/
+ COPY --chmod=0755 scripts/target-cc /usr/local/bin/
+ # tools needed at build-time only
+ # first ensure we can install packages for both architectures
+-RUN dpkg --add-architecture arm64 && dpkg --add-architecture amd64 \
+-    && clean-install bash ca-certificates curl git make pkg-config \
+-    crossbuild-essential-amd64 crossbuild-essential-arm64 \
+-    libseccomp-dev:amd64 libseccomp-dev:arm64
++RUN clean-install bash ca-certificates curl git make pkg-config \
++    build-essential \
++    libseccomp-dev
+ # set by makefile to .go-version
+ ARG GO_VERSION
+ RUN eval "$(gimme "${GO_VERSION}")" \
+diff --git a/images/base/files/etc/containerd/config.toml b/images/base/files/etc/containerd/config.toml
+index 94ee2f5..b718cd1 100644
+--- a/images/base/files/etc/containerd/config.toml
++++ b/images/base/files/etc/containerd/config.toml
+@@ -34,7 +34,8 @@ version = 2
+ 
+ [plugins."io.containerd.grpc.v1.cri"]
+   # use fixed sandbox image
+-  sandbox_image = "registry.k8s.io/pause:3.7"
++  # sandbox_image = "registry.k8s.io/pause:3.7"
++  sandbox_image = "ghcr.io/go-riscv/pause:3.9-linux-riscv64"
+   # allow hugepages controller to be missing
+   # see https://github.com/containerd/cri/pull/1501
+   tolerate_missing_hugepages_controller = true
+diff --git a/images/base/scripts/target-cc b/images/base/scripts/target-cc
+index f8226e1..9bdafa5 100755
+--- a/images/base/scripts/target-cc
++++ b/images/base/scripts/target-cc
+@@ -23,6 +23,8 @@ case $TARGETARCH in
+     echo -n 'aarch64-linux-gnu-gcc' ;;
+   amd64)
+     echo -n 'x86_64-linux-gnu-gcc' ;;
++  riscv64)
++    echo -n 'riscv64-linux-gnu-gcc' ;;
+   *)
+     exit 1 ;;
+ esac
+diff --git a/images/base/scripts/third_party/gimme/gimme b/images/base/scripts/third_party/gimme/gimme
+index 75e618d..e84d609 100755
+--- a/images/base/scripts/third_party/gimme/gimme
++++ b/images/base/scripts/third_party/gimme/gimme
+@@ -142,15 +142,15 @@ _do_curls() {
+ 	fi
+ 	for url in "${@}"; do
+ 		if _do_curl "${url}" "${f}"; then
+-			if _do_curl "${url}.sha256" "${f}.sha256"; then
+-				echo "$(cat "${f}.sha256")  ${f}" >"${f}.sha256.tmp"
+-				mv "${f}.sha256.tmp" "${f}.sha256"
+-				if ! _sha256sum -c "${f}.sha256" &>/dev/null; then
+-					warn "sha256sum failed for '${f}'"
+-					warn 'continuing to next candidate URL'
+-					continue
+-				fi
+-			fi
++			# if _do_curl "${url}.sha256" "${f}.sha256"; then
++			# 	echo "$(cat "${f}.sha256")  ${f}" >"${f}.sha256.tmp"
++			# 	mv "${f}.sha256.tmp" "${f}.sha256"
++			# 	if ! _sha256sum -c "${f}.sha256" &>/dev/null; then
++			# 		warn "sha256sum failed for '${f}'"
++			# 		warn 'continuing to next candidate URL'
++			# 		continue
++			# 	fi
++			# fi
+ 			return
+ 		fi
+ 	done
+@@ -285,7 +285,7 @@ _extract() {
+ 
+ # _setup_bootstrap
+ _setup_bootstrap() {
+-	local versions=("1.18" "1.17" "1.16" "1.15" "1.14" "1.13" "1.12" "1.11" "1.10" "1.9" "1.8" "1.7" "1.6" "1.5" "1.4")
++	local versions=("1.21.0" "1.18" "1.17" "1.16" "1.15" "1.14" "1.13" "1.12" "1.11" "1.10" "1.9" "1.8" "1.7" "1.6" "1.5" "1.4")
+ 
+ 	# try existing
+ 	for v in "${versions[@]}"; do
+@@ -785,7 +785,7 @@ _to_goarch() {
+ : "${GIMME_GO_GIT_REMOTE:=https://github.com/golang/go.git}"
+ : "${GIMME_TYPE:=auto}" # 'auto', 'binary', 'source', or 'git'
+ : "${GIMME_BINARY_OSX:=osx10.8}"
+-: "${GIMME_DOWNLOAD_BASE:=https://dl.google.com/go}"
++: "${GIMME_DOWNLOAD_BASE:=https://go.dev/dl}"
+ : "${GIMME_LIST_KNOWN:=https://golang.org/dl}"
+ : "${GIMME_KNOWN_CACHE_MAX:=10800}"
+ 
+diff --git a/images/kindnetd/Dockerfile b/images/kindnetd/Dockerfile
+index 3d69513..dbf003c 100644
+--- a/images/kindnetd/Dockerfile
++++ b/images/kindnetd/Dockerfile
+@@ -14,7 +14,7 @@
+ 
+ # first stage build kindnetd binary
+ # NOTE: the actual go version will be overridden
+-FROM --platform=$BUILDPLATFORM docker.io/library/golang:latest
++FROM --platform=$BUILDPLATFORM ghcr.io/go-riscv/golang:1.21-unstable
+ WORKDIR /go/src
+ COPY --chmod=0755 scripts/third_party/gimme/gimme /usr/local/bin/
+ # make deps fetching cacheable
+@@ -32,7 +32,7 @@ RUN eval "$(gimme "${GO_VERSION}")" \
+     && GOARCH=$TARGETARCH go-licenses save --save_path=/_LICENSES ./cmd/kindnetd
+ 
+ # build real kindnetd image
+-FROM registry.k8s.io/build-image/distroless-iptables:v0.2.3
++FROM ghcr.io/go-riscv/distroless-iptables-riscv64:v0.5.1
+ COPY --from=0 --chown=root:root ./go/src/kindnetd /bin/kindnetd
+ COPY --from=0 /_LICENSES/* /LICENSES/
+ COPY --chmod=0644 files/LICENSES/* /LICENSES/*
+diff --git a/images/local-path-helper/Dockerfile b/images/local-path-helper/Dockerfile
+index 1bb8845..359cad1 100644
+--- a/images/local-path-helper/Dockerfile
++++ b/images/local-path-helper/Dockerfile
+@@ -15,7 +15,7 @@
+ # This image is contains the binaries needed for the local-path-provisioner
+ # helper pod. Currently that means: sh, rm, mkdir
+ 
+-ARG BASE="registry.k8s.io/build-image/debian-base:bullseye-v1.4.3"
++ARG BASE="ghcr.io/go-riscv/debian-base-riscv64:unstable-v1.0.1"
+ FROM ${BASE} as build
+ 
+ # NOTE: copyrights.tar.gz is a quirk of Kubernetes's debian-base image
+@@ -42,6 +42,6 @@ RUN mkdir -p "${STAGE_DIR}" && \
+     find "${STAGE_DIR}"
+ 
+ # copy staged binary + deps + copyright into distroless
+-FROM "gcr.io/distroless/static-debian11"
++FROM "ghcr.io/go-riscv/distroless/static-unstable"
+ ARG STAGE_DIR="/opt/stage"
+ COPY --from=build "${STAGE_DIR}/" /
+diff --git a/images/local-path-provisioner/Dockerfile b/images/local-path-provisioner/Dockerfile
+index 5c14e88..4a75dc2 100644
+--- a/images/local-path-provisioner/Dockerfile
++++ b/images/local-path-provisioner/Dockerfile
+@@ -13,7 +13,7 @@
+ # limitations under the License.
+ 
+ # NOTE the actual go version will be overridden
+-FROM --platform=$BUILDPLATFORM docker.io/library/golang:latest
++FROM --platform=$BUILDPLATFORM ghcr.io/go-riscv/golang:1.21-unstable
+ COPY --chmod=0755 scripts/third_party/gimme/gimme /usr/local/bin/
+ RUN git clone --filter=tree:0 https://github.com/rancher/local-path-provisioner
+ ARG VERSION
+@@ -27,7 +27,7 @@ RUN eval "$(gimme "${GO_VERSION}")" \
+     && GOBIN=/usr/local/bin go install github.com/google/go-licenses@latest \
+     && GOARCH=$TARGETARCH go-licenses save --save_path=/_LICENSES .
+ 
+-FROM gcr.io/distroless/base-debian11
++FROM  ghcr.io/go-riscv/distroless/static-unstable
+ COPY --from=0 /usr/local/bin/local-path-provisioner /usr/local/bin/local-path-provisioner
+ COPY --from=0 /_LICENSES/* /LICENSES/
+ COPY --chmod=0644 files/LICENSES/* /LICENSES/*
+diff --git a/pkg/build/nodeimage/build.go b/pkg/build/nodeimage/build.go
+index 34d68a8..82cc3e0 100644
+--- a/pkg/build/nodeimage/build.go
++++ b/pkg/build/nodeimage/build.go
+@@ -73,6 +73,7 @@ func supportedArch(arch string) bool {
+ 	// currently we nominally support building node images for these
+ 	case "amd64":
+ 	case "arm64":
++	case "riscv64":
+ 	}
+ 	return true
+ }
+diff --git a/pkg/build/nodeimage/const_cni.go b/pkg/build/nodeimage/const_cni.go
+index 480dc6a..1b0690f 100644
+--- a/pkg/build/nodeimage/const_cni.go
++++ b/pkg/build/nodeimage/const_cni.go
+@@ -20,7 +20,7 @@ package nodeimage
+ The default CNI manifest and images are our own tiny kindnet
+ */
+ 
+-const kindnetdImage = "docker.io/kindest/kindnetd:v20240202-8f1494ea"
++const kindnetdImage = "ghcr.io/go-riscv/kindnetd:riscv64"
+ 
+ var defaultCNIImages = []string{kindnetdImage}
+ 
+diff --git a/pkg/build/nodeimage/const_storage.go b/pkg/build/nodeimage/const_storage.go
+index a45313b..570d0a7 100644
+--- a/pkg/build/nodeimage/const_storage.go
++++ b/pkg/build/nodeimage/const_storage.go
+@@ -25,8 +25,8 @@ NOTE: we have customized it in the following ways:
+ - install as the default storage class
+ */
+ 
+-const storageProvisionerImage = "docker.io/kindest/local-path-provisioner:v20240202-8f1494ea"
+-const storageHelperImage = "docker.io/kindest/local-path-helper:v20230510-486859a6"
++const storageProvisionerImage = "ghcr.io/go-riscv/local-path-provisioner:riscv64"
++const storageHelperImage = "ghcr.io/go-riscv/local-path-helper:riscv64"
+ 
+ // image we need to preload
+ var defaultStorageImages = []string{storageProvisionerImage, storageHelperImage}

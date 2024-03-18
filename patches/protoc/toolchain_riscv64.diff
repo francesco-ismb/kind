@@ -1,0 +1,13 @@
+diff --git a/toolchain/BUILD.bazel b/toolchain/BUILD.bazel
+index eaeee5c0f..1c88ec04d 100644
+--- a/toolchain/BUILD.bazel
++++ b/toolchain/BUILD.bazel
+@@ -77,7 +77,7 @@ cc_toolchain_config(
+     name = "linux-riscv_64-config",
+     linker_path = "/usr/bin/ld",
+     sysroot = "/opt/manylinux/2014/riscv64",
+-    target_cpu = "systemz",
++    target_cpu = "riscv64",
+     target_full_name = "riscv64-linux-gnu",
+ )
+ 

@@ -1,0 +1,359 @@
+commit eced85c3d2bfea94c5bd7fc20beedb87a0f35947
+Author: Nikolay Nikolaev <nicknickolaev@gmail.com>
+Date:   Tue Mar 19 14:26:02 2024 +0000
+
+    Add unstable build for distroless-iptables
+
+diff --git a/images/build/distroless-iptables/Makefile b/images/build/distroless-iptables/Makefile
+index 9774381e..d60f8dc5 100644
+--- a/images/build/distroless-iptables/Makefile
++++ b/images/build/distroless-iptables/Makefile
+@@ -43,15 +43,7 @@ export DOCKER_CLI_EXPERIMENTAL := enabled
+ SUDO=$(if $(filter 0,$(shell id -u)),,sudo)
+ 
+ build:
+-	# Fix possible issues with the local umask
+-	umask 0022
+-
+-	# Enable execution of multi-architecture containers
+-	docker run --rm --privileged $(QEMUIMAGE):$(QEMUVERSION) --reset -p yes
+-	docker buildx version
+-	BUILDER=$(shell docker buildx create --use)
+ 	docker buildx build \
+-		--pull \
+ 		--load \
+ 		--platform linux/$(ARCH) \
+ 		-t $(IMAGE)-$(ARCH):$(IMAGE_VERSION) \
+@@ -61,7 +53,6 @@ build:
+ 		--build-arg=GORUNNERIMAGE=$(GORUNNERIMAGE) \
+ 		--build-arg=SKIP_WRAPPER_CHECK=$(SKIP_WRAPPER_CHECK) \
+ 		$(CONFIG)
+-	docker buildx rm $$BUILDER
+ 
+ push: build
+ 	docker push $(IMAGE)-$(ARCH):$(IMAGE_VERSION)
+diff --git a/images/build/distroless-iptables/distroless-unstable/Dockerfile b/images/build/distroless-iptables/distroless-unstable/Dockerfile
+new file mode 100644
+index 00000000..f40f7c92
+--- /dev/null
++++ b/images/build/distroless-iptables/distroless-unstable/Dockerfile
+@@ -0,0 +1,74 @@
++# Copyright 2022 The Kubernetes Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++ARG BASEIMAGE
++ARG GORUNNERIMAGE
++# Using directly debian base, as we are going to just copy the required binaries
++FROM ${BASEIMAGE} as build
++
++COPY stage-binary-and-deps.sh /
++COPY stage-binaries-from-package.sh /
++COPY package-utils.sh /
++
++# TODO: /bin/sleep is used by a specific e2e test
++ARG STAGE_DIR="/opt/stage"
++RUN apt -y update && \
++    apt -y dist-upgrade && \
++    apt -y install bash curl && \
++    mkdir -p "${STAGE_DIR}" && \
++    /stage-binaries-from-package.sh "${STAGE_DIR}" conntrack \
++    ebtables    \
++    ipset       \
++    iptables    \
++    nftables    \
++    kmod        && \
++    `# below binaries and dash are used by iptables-wrapper-installer.sh` \
++    /stage-binary-and-deps.sh "${STAGE_DIR}" /bin/dash \
++    /bin/cat \
++    /bin/chmod \
++    /bin/grep \
++    /bin/ln  \
++    /bin/rm \
++    /bin/sleep \
++    /usr/bin/wc
++
++RUN curl -o "${STAGE_DIR}"/iptables-wrapper-installer.sh https://raw.githubusercontent.com/kubernetes-sigs/iptables-wrappers/v2/iptables-wrapper-installer.sh && \
++    chmod +x "${STAGE_DIR}"/iptables-wrapper-installer.sh && \
++    ln -sf /bin/dash "${STAGE_DIR}"/bin/sh
++
++# we're going to borrow the /go-runner binary in the final image
++# dedupe this binary by just copying it from the go-runner image
++FROM ${GORUNNERIMAGE} as gorunner
++
++# We need to use distroless:base here as tzdata, glibc and some other base packages
++# are required
++FROM debian:unstable-slim as intermediate
++
++ARG SKIP_WRAPPER_CHECK
++
++COPY clean-distroless.sh /clean-distroless.sh
++
++# /bin is a symlink to /usr/bin; create /bin and copy everything from /usr/bin into it
++RUN rm /bin && mkdir /bin && cp -r /usr/bin/ /bin
++
++COPY --from=build /opt/stage /
++COPY --from=gorunner /go-runner /go-runner
++# iptables-wrapper-installer needs to know that iptables exists before doing all its magic
++RUN echo "" >  /usr/sbin/iptables && \
++    `# We skip sanity check in iptables-wrapper-installer due to qemu multiarch problems `\
++    /iptables-wrapper-installer.sh ${SKIP_WRAPPER_CHECK} && \
++    /clean-distroless.sh
++
++FROM scratch
++copy --from=intermediate / /
+diff --git a/images/build/distroless-iptables/distroless-unstable/clean-distroless.sh b/images/build/distroless-iptables/distroless-unstable/clean-distroless.sh
+new file mode 100755
+index 00000000..26d9bd10
+--- /dev/null
++++ b/images/build/distroless-iptables/distroless-unstable/clean-distroless.sh
+@@ -0,0 +1,32 @@
++#!/bin/sh
++
++# Copyright 2022 The Kubernetes Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++# USAGE: clean-distroless.sh
++
++REMOVE="/usr/share/base-files
++/usr/share/man
++/usr/lib/*-linux-gnu/gconv/
++/usr/bin/c_rehash
++/usr/bin/openssl
++/iptables-wrapper-installer.sh
++/clean-distroless.sh"
++
++IFS="
++"
++
++for item in ${REMOVE}; do
++    rm -rf "${item}"
++done
+diff --git a/images/build/distroless-iptables/distroless-unstable/package-utils.sh b/images/build/distroless-iptables/distroless-unstable/package-utils.sh
+new file mode 100755
+index 00000000..8517fc4e
+--- /dev/null
++++ b/images/build/distroless-iptables/distroless-unstable/package-utils.sh
+@@ -0,0 +1,56 @@
++#!/bin/bash
++
++# Copyright 2022 The Kubernetes Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++# file_to_package identifies the debian package that provided the file $1
++file_to_package() {
++    # `dpkg-query --search $file-pattern` outputs lines with the format: "$package: $file-path"
++    # where $file-path belongs to $package
++    # https://manpages.debian.org/jessie/dpkg/dpkg-query.1.en.html
++    (dpkg-query --search "$(realpath "${1}")" || true) | cut -d':' -f1
++}
++
++# package_to_copyright gives the path to the copyright file for the package $1
++package_to_copyright() {
++    echo "/usr/share/doc/${1}/copyright"
++}
++
++# stage_file stages the filepath $1 to $2, following symlinks
++# and staging copyrights
++stage_file() {
++    # /lib is a symlink to /usr/lib in debian 12, means we just stick to
++    # /usr/lib for all libraries to avoid separating symlinks with the actual binaries
++    from="${1}"
++    if [[ $from = /lib/*  ]]; then
++        from="/usr$from"
++    fi
++    cp -a --parents "${from}" "${2}"
++    # recursively follow symlinks
++    if [[ -L "${from}" ]]; then
++        stage_file "$(cd "$(dirname "${from}")" || exit; realpath -s "$(readlink "${from}")")" "${2}"
++    fi
++    # get the package so we can stage package metadata as well
++    package="$(file_to_package "${from}")"
++
++    # files like /usr/lib/x86_64-linux-gnu/libc.so.6 will return no package
++    if [[ "$package" != "" ]]; then
++        # stage the copyright for the file
++        cp -a --parents "$(package_to_copyright "${package}")" "${2}"
++        # stage the package status mimicking bazel
++        # https://github.com/bazelbuild/rules_docker/commit/f5432b813e0a11491cf2bf83ff1a923706b36420
++        # instead of parsing the control file, we can just get the actual package status with dpkg
++        dpkg -s "${package}" > "${2}/var/lib/dpkg/status.d/${package}"
++    fi
++}
+diff --git a/images/build/distroless-iptables/distroless-unstable/stage-binaries-from-package.sh b/images/build/distroless-iptables/distroless-unstable/stage-binaries-from-package.sh
+new file mode 100755
+index 00000000..84d36b9c
+--- /dev/null
++++ b/images/build/distroless-iptables/distroless-unstable/stage-binaries-from-package.sh
+@@ -0,0 +1,63 @@
++#!/bin/bash
++
++# Copyright 2022 The Kubernetes Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++# USAGE: stage-binaries-from-package.sh /opt/stage package1 package2
++#
++# Stages all the packages and its dependencies (+ libraries and copyrights) to $1
++#
++# This is intended to be used in a multi-stage docker build with a distroless/base
++# or distroless/cc image.
++set -e
++
++. package-utils.sh
++
++stage_file_list() {
++    IFS="
++    "
++    REQUIRED_FILES="$(dpkg -L "${1}" | grep -vE '(/\.|/s?bin/|/usr/share/(man|doc|.*-completion))' | sed 's/\n/ /g')"
++    for file in $REQUIRED_FILES; do 
++        if [ -f "$file" ]; then
++            stage_file "${file}" "${STAGE_DIR}"
++        fi
++    done
++
++    BIN_LIST="$(dpkg -L "${1}" | grep -E '/s?bin/' |sed 's/\n/ /g')"
++    for binary in $BIN_LIST; do
++        /stage-binary-and-deps.sh "${2}" "${binary}"
++    done
++}
++
++get_dependent_packages() {
++    apt-cache depends "${1}" |grep Depends|awk -F '.*Depends:[[:space:]]?' '{print $2}'
++}
++
++main() {
++    STAGE_DIR="${1}/"
++    mkdir -p "${STAGE_DIR}"/var/lib/dpkg/status.d/
++    apt -y update
++    shift
++    while (( "$#" )); do        # While there are arguments still to be shifted
++        PACKAGE="${1}"
++        apt -y install "${PACKAGE}"
++        stage_file_list "${PACKAGE}" "$STAGE_DIR"
++        while IFS= read -r c_dep; do
++            stage_file_list "${c_dep}" "${STAGE_DIR}"
++        done < <(get_dependent_packages "${PACKAGE}")
++        shift
++    done
++}
++
++main "$@"
+diff --git a/images/build/distroless-iptables/distroless-unstable/stage-binary-and-deps.sh b/images/build/distroless-iptables/distroless-unstable/stage-binary-and-deps.sh
+new file mode 100755
+index 00000000..1a7a6917
+--- /dev/null
++++ b/images/build/distroless-iptables/distroless-unstable/stage-binary-and-deps.sh
+@@ -0,0 +1,70 @@
++#!/bin/bash
++
++# Copyright 2021 The Kubernetes Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++# USAGE: stage-binary-and-deps.sh haproxy /opt/stage
++#
++# Stages $1 and its dependencies + their copyright files to $2
++#
++# This is intended to be used in a multi-stage docker build with a distroless/base
++# or distroless/cc image.
++# This script was originally created by KinD maintainers and can be found at:
++#   https://github.com/kubernetes-sigs/kind/blob/v0.14.0/images/haproxy/stage-binary-and-deps.sh
++
++set -o errexit
++set -o nounset
++set -o pipefail
++
++
++. package-utils.sh
++
++# binary_to_libraries identifies the library files needed by the binary $1 with ldd
++binary_to_libraries() {
++    # see: https://man7.org/linux/man-pages/man1/ldd.1.html
++    ldd "${1}" \
++    `# strip the leading '${name} => ' if any so only '/lib-foo.so (0xf00)' remains` \
++    | sed -E 's#.* => /#/#' \
++    `# we want only the path remaining, not the (0x${LOCATION})` \
++    | awk '{print $1}' \
++    `# linux-vdso.so.1 is a special virtual shared object from the kernel` \
++    `# see: http://man7.org/linux/man-pages/man7/vdso.7.html` \
++    | grep -v 'linux-vdso.so.1'
++}
++
++# main script logic
++main(){
++    local STAGE_DIR="${1}/"
++    shift
++    while (( "$#" )); do
++        BINARY="${1}"
++        # locate the path to the binary
++        local binary_path
++        binary_path="$(which "${BINARY}")"
++    
++        # ensure package metadata dir
++        mkdir -p "${STAGE_DIR}"/var/lib/dpkg/status.d/
++    
++        # stage the binary itself
++        stage_file "${binary_path}" "${STAGE_DIR}"
++    
++        # stage the dependencies of the binary
++        while IFS= read -r c_dep; do
++            stage_file "${c_dep}" "${STAGE_DIR}"
++        done < <(binary_to_libraries "${binary_path}")
++        shift
++    done
++}
++
++main "$@"

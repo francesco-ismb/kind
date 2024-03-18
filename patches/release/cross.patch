@@ -1,0 +1,32 @@
+commit 6442018dba541066303d4953aa40389b873924f8
+Author: Nikolay Nikolaev <nicknickolaev@gmail.com>
+Date:   Mon Mar 18 09:39:58 2024 +0000
+
+    Make cross image use precompiled protoc
+
+diff --git a/images/build/cross/default/Dockerfile b/images/build/cross/default/Dockerfile
+index 70f65eb8..961c1b9d 100644
+--- a/images/build/cross/default/Dockerfile
++++ b/images/build/cross/default/Dockerfile
+@@ -42,6 +42,9 @@ ENV KUBE_CROSSPLATFORMS \
+ 
+ ##------------------------------------------------------------
+ 
++# Copy the precompiled binaries folder
++COPY precompiled /precompiled
++
+ # Pre-compile the standard go library when cross-compiling. This is much easier now when we have go1.5+
+ RUN targetArch=$(echo $TARGETPLATFORM | cut -f2 -d '/') \
+     && if [ ${targetArch} = "amd64" ]; then \
+@@ -101,7 +104,10 @@ elif [ ${targetArch} = "riscv64" ]; then \
+   ZIPNAME="protoc-${PROTOBUF_VERSION}-linux-riscv_64.zip"; \
+ fi \
+   && mkdir /tmp/protoc && cd /tmp/protoc \
+-  && wget "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOBUF_VERSION}/${ZIPNAME}" \
++  && if [ -f "/precompiled/${ZIPNAME}" ]; \
++    then cp "/precompiled/${ZIPNAME}" .; \
++    else wget "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOBUF_VERSION}/${ZIPNAME}"; \
++  fi \
+   && unzip "${ZIPNAME}" \
+   && chmod -R +rX /tmp/protoc \
+   && cp -pr bin /usr/local \

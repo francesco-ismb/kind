@@ -1,0 +1,173 @@
+commit d8c55554b5429769b63d1a9868b5ad590e0373c8
+Author: Aleksandr Razumov <ernado@ya.ru>
+Date:   Thu Mar 16 20:00:52 2023 +0300
+
+    feat: support riscv64
+
+diff --git a/hack/init-buildx.sh b/hack/init-buildx.sh
+index 6cc3bb28..dd51da44 100755
+--- a/hack/init-buildx.sh
++++ b/hack/init-buildx.sh
+@@ -54,6 +54,7 @@ if ! grep -q "^Driver: docker$"  <<<"${current_builder}" \
+   && grep -q "linux/arm" <<<"${current_builder}" \
+   && grep -q "linux/arm64" <<<"${current_builder}" \
+   && grep -q "linux/ppc64le" <<<"${current_builder}" \
++  && grep -q "linux/riscv64" <<<"${current_builder}" \
+   && grep -q "linux/s390x" <<<"${current_builder}"; then
+   exit 0
+ fi
+diff --git a/hack/verify-build.sh b/hack/verify-build.sh
+index abddf89a..12858aa0 100755
+--- a/hack/verify-build.sh
++++ b/hack/verify-build.sh
+@@ -25,6 +25,7 @@ PLATFORMS=(
+     linux/arm64
+     linux/ppc64le
+     linux/s390x
++    linux/riscv64
+     windows/amd64
+     windows/386
+     freebsd/amd64
+diff --git a/images/Makefile.common-image b/images/Makefile.common-image
+index 9b08ccaf..4530602e 100644
+--- a/images/Makefile.common-image
++++ b/images/Makefile.common-image
+@@ -21,7 +21,7 @@ TAG ?= $(shell git describe --tags --always --dirty)
+ 
+ # TODO: Uncomment once all images using this Makefile can be built on all
+ #       supported Kubernetes server platforms.
+-#PLATFORMS ?= linux/amd64 linux/arm linux/arm64 linux/ppc64le linux/s390x
++#PLATFORMS ?= linux/amd64 linux/arm linux/arm64 linux/ppc64le linux/s390x linux/riscv64
+ ARCHS = $(patsubst linux/%,%,$(PLATFORMS))
+ 
+ # Ensure support for 'docker buildx' and 'docker manifest' commands
+diff --git a/images/build/cross/Makefile b/images/build/cross/Makefile
+index 946301ea..ed0f1921 100644
+--- a/images/build/cross/Makefile
++++ b/images/build/cross/Makefile
+@@ -53,7 +53,7 @@ export DOCKER_CLI_EXPERIMENTAL=enabled
+ # TODO: Support multi-arch kube-cross images for linux/arm
+ #       Currently some of the components references in the Dockerfile are
+ #       not supported in specific architectures
+-PLATFORMS ?= linux/amd64 linux/arm64 linux/ppc64le linux/s390x #linux/arm
++PLATFORMS ?= linux/amd64 linux/arm64 linux/ppc64le linux/s390x linux/riscv64 #linux/arm
+ 
+ # for legacy images only build linux/amd64
+ ifeq ($(TYPE), legacy)
+diff --git a/images/build/cross/default/Dockerfile b/images/build/cross/default/Dockerfile
+index f73de9c8..70f65eb8 100644
+--- a/images/build/cross/default/Dockerfile
++++ b/images/build/cross/default/Dockerfile
+@@ -36,6 +36,7 @@ ENV KUBE_CROSSPLATFORMS \
+   linux/arm linux/arm64 \
+   linux/ppc64le \
+   linux/s390x \
++  linux/riscv64 \
+   darwin/amd64 \
+   windows/amd64 windows/386
+ 
+@@ -79,7 +80,7 @@ RUN targetArch=$(echo $TARGETPLATFORM | cut -f2 -d '/') \
+ fi
+ 
+ RUN targetArch=$(echo $TARGETPLATFORM | cut -f2 -d '/') \
+-  && if [ ${targetArch} = "ppc64le" ] || [ ${targetArch} = "s390x" ]; then \
++  && if [ ${targetArch} = "ppc64le" ] || [ ${targetArch} = "s390x" ] || [ ${targetArch} = "riscv64" ]; then \
+     echo "deb http://ports.ubuntu.com/ubuntu-ports/ xenial main" > /etc/apt/sources.list.d/ports.list \
+     && apt-key adv --no-tty --keyserver keyserver.ubuntu.com --recv-keys 40976EAF437D05B5 3B4FE6ACC0B21F32 \
+     && apt-get update \
+@@ -96,6 +97,8 @@ elif [ ${targetArch} = "ppc64le" ]; then \
+   ZIPNAME="protoc-${PROTOBUF_VERSION}-linux-ppcle_64.zip"; \
+ elif [ ${targetArch} = "s390x" ]; then \
+   ZIPNAME="protoc-${PROTOBUF_VERSION}-linux-s390_64.zip"; \
++elif [ ${targetArch} = "riscv64" ]; then \
++  ZIPNAME="protoc-${PROTOBUF_VERSION}-linux-riscv_64.zip"; \
+ fi \
+   && mkdir /tmp/protoc && cd /tmp/protoc \
+   && wget "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOBUF_VERSION}/${ZIPNAME}" \
+diff --git a/images/build/debian-base/Makefile b/images/build/debian-base/Makefile
+index 2a65761b..a68f8011 100755
+--- a/images/build/debian-base/Makefile
++++ b/images/build/debian-base/Makefile
+@@ -24,7 +24,7 @@ CONFIG ?= bookworm
+ 
+ TAR_FILE ?= rootfs.tar
+ ARCH ?= amd64
+-ALL_ARCH = amd64 arm arm64 ppc64le s390x
++ALL_ARCH = amd64 arm arm64 ppc64le s390x riscv64
+ 
+ QEMUVERSION=7.2.0-1
+ QEMUIMAGE ?= multiarch/qemu-user-static
+@@ -52,6 +52,10 @@ ifeq ($(ARCH),s390x)
+ 	BASEIMAGE?=s390x/debian:$(CONFIG)-slim
+ 	QEMUARCH=s390x
+ endif
++ifeq ($(ARCH),riscv64)
++	BASEIMAGE?=riscv64/debian:$(CONFIG)-slim
++	QEMUARCH=riscv64
++endif
+ 
+ sub-build-%:
+ 	$(MAKE) ARCH=$* build
+diff --git a/images/build/distroless-iptables/Makefile b/images/build/distroless-iptables/Makefile
+index afa4215e..9774381e 100644
+--- a/images/build/distroless-iptables/Makefile
++++ b/images/build/distroless-iptables/Makefile
+@@ -24,7 +24,7 @@ BASEIMAGE ?= debian:bookworm-slim
+ GORUNNER_VERSION ?= v2.3.1-go1.22.1-bookworm.0
+ 
+ ARCH?=amd64
+-ALL_ARCH = amd64 arm arm64 ppc64le s390x
++ALL_ARCH = amd64 arm arm64 ppc64le s390x riscv64
+ 
+ BASE_REGISTRY?=registry.k8s.io/build-image
+ 
+diff --git a/images/build/distroless-iptables/README.md b/images/build/distroless-iptables/README.md
+index f7b4bb87..aaa81070 100644
+--- a/images/build/distroless-iptables/README.md
++++ b/images/build/distroless-iptables/README.md
+@@ -16,6 +16,7 @@ $ make all-push
+ # ---> gcr.io/k8s-staging-build-image/distroless-iptables-arm64:TAG
+ # ---> gcr.io/k8s-staging-build-image/distroless-iptables-ppc64le:TAG
+ # ---> gcr.io/k8s-staging-build-image/distroless-iptables-s390x:TAG
++# ---> gcr.io/k8s-staging-build-image/distroless-iptables-riscv64:TAG
+ ```
+ 
+ If you don't want to push the images, run `make build ARCH={target_arch}` or `make all-build` instead.
+diff --git a/images/build/go-runner/Makefile b/images/build/go-runner/Makefile
+index 79b41ee4..8d0096fb 100644
+--- a/images/build/go-runner/Makefile
++++ b/images/build/go-runner/Makefile
+@@ -33,7 +33,7 @@ BUILD_METADATA = go$(GO_VERSION)-$(OS_CODENAME).$(REVISION)
+ 
+ IMAGE_VERSION = $(APP_VERSION)-$(BUILD_METADATA)
+ 
+-PLATFORMS ?= linux/amd64 linux/arm64 linux/arm linux/ppc64le linux/s390x
++PLATFORMS ?= linux/amd64 linux/arm64 linux/arm linux/ppc64le linux/s390x linux/riscv64
+ 
+ HOST_GOOS ?= $(shell go env GOOS)
+ HOST_GOARCH ?= $(shell go env GOARCH)
+diff --git a/images/build/setcap/Makefile b/images/build/setcap/Makefile
+index 939c84f2..de20420d 100644
+--- a/images/build/setcap/Makefile
++++ b/images/build/setcap/Makefile
+@@ -23,7 +23,7 @@ CONFIG ?= bookworm
+ DEBIAN_BASE_VERSION ?= bookworm-v1.0.1
+ 
+ ARCH?=amd64
+-ALL_ARCH = amd64 arm arm64 ppc64le s390x
++ALL_ARCH = amd64 arm arm64 ppc64le s390x riscv64
+ 
+ BASE_REGISTRY?=registry.k8s.io/build-image
+ BASEIMAGE?=$(BASE_REGISTRY)/debian-base-$(ARCH):$(DEBIAN_BASE_VERSION)
+diff --git a/images/build/setcap/README.md b/images/build/setcap/README.md
+index 6a2b0160..abeddf34 100644
+--- a/images/build/setcap/README.md
++++ b/images/build/setcap/README.md
+@@ -20,6 +20,7 @@ $ make all-push
+ # ---> gcr.io/k8s-staging-build-image/setcap-arm64:TAG
+ # ---> gcr.io/k8s-staging-build-image/setcap-ppc64le:TAG
+ # ---> gcr.io/k8s-staging-build-image/setcap-s390x:TAG
++# ---> gcr.io/k8s-staging-build-image/setcap-riscv64:TAG
+ ```
+ 
+ If you don't want to push the images, run `make sub-build-{target_arch}` or `make all-build` instead

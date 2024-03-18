@@ -1,0 +1,58 @@
+commit 2cebfeb3d0def7b7ac68414cf910fff19be93efa
+Author: Aleksandr Razumov <ernado@ya.ru>
+Date:   Thu Mar 16 20:37:04 2023 +0300
+
+    feat: support riscv64
+
+diff --git a/protobuf_release.bzl b/protobuf_release.bzl
+index 327ae9a0a..52e9e3fae 100644
+--- a/protobuf_release.bzl
++++ b/protobuf_release.bzl
+@@ -22,6 +22,8 @@ def _package_naming_impl(ctx):
+     cpu = "aarch_64"
+   elif cpu == "ppc64":
+     cpu = "ppcle_64"
++  elif cpu == "riscv64":
++    cpu = "riscv_64"
+ 
+   # use the system name to determine the os and then create platform names
+   if "apple" in system_name:
+diff --git a/toolchain/BUILD.bazel b/toolchain/BUILD.bazel
+index 5bc8c8a03..eaeee5c0f 100644
+--- a/toolchain/BUILD.bazel
++++ b/toolchain/BUILD.bazel
+@@ -10,6 +10,7 @@ TOOLCHAINS = {
+     "linux-aarch_64": "cc-compiler-linux-aarch_64",
+     "linux-ppcle_64": "cc-compiler-linux-ppcle_64",
+     "linux-s390_64": "cc-compiler-linux-s390_64",
++    "linux-riscv_64": "cc-compiler-linux-riscv_64",
+     "linux-x86_32": "cc-compiler-linux-x86_32",
+     "linux-x86_64": "cc-compiler-linux-x86_64",
+     "win32": "cc-compiler-windows-x86_32",
+@@ -72,6 +73,14 @@ cc_toolchain_config(
+     target_full_name = "s390x-linux-gnu",
+ )
+ 
++cc_toolchain_config(
++    name = "linux-riscv_64-config",
++    linker_path = "/usr/bin/ld",
++    sysroot = "/opt/manylinux/2014/riscv64",
++    target_cpu = "systemz",
++    target_full_name = "riscv64-linux-gnu",
++)
++
+ cc_toolchain_config(
+     name = "linux-x86_32-config",
+     linker_path = "/usr/bin/ld",
+diff --git a/toolchain/toolchains.bazelrc b/toolchain/toolchains.bazelrc
+index 908a26e12..d511069a1 100644
+--- a/toolchain/toolchains.bazelrc
++++ b/toolchain/toolchains.bazelrc
+@@ -6,6 +6,7 @@ build:linux-aarch64 --config=cross_config --cpu=linux-aarch_64
+ build:linux-ppcle_64 --config=cross_config --cpu=linux-ppcle_64
+ build:linux-ppc64le --config=cross_config --cpu=linux-ppcle_64
+ build:linux-s390_64 --config=cross_config --cpu=linux-s390_64
++build:linux-riscv_64 --config=cross_config --cpu=linux-riscv_64
+ build:linux-x86_32 --config=cross_config --cpu=linux-x86_32
+ build:linux-i386 --config=cross_config --cpu=linux-x86_32
+ build:linux-x86_64 --config=cross_config --cpu=linux-x86_64

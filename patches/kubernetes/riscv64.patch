@@ -1,0 +1,87 @@
+commit f45f5c8ad8a0bc1df0c372efa20dba973dea4f1e
+Author: JasenChao <JasenChao@gmail.com>
+Date:   Sun Mar 3 22:44:09 2024 +0800
+
+    Add riscv64 support.
+
+diff --git a/hack/lib/golang.sh b/hack/lib/golang.sh
+index f3466ff76bd..8ce22b888c9 100755
+--- a/hack/lib/golang.sh
++++ b/hack/lib/golang.sh
+@@ -27,6 +27,7 @@ readonly KUBE_SUPPORTED_SERVER_PLATFORMS=(
+   linux/arm64
+   linux/s390x
+   linux/ppc64le
++  linux/riscv64
+ )
+ 
+ # The node platforms we build for
+@@ -35,6 +36,7 @@ readonly KUBE_SUPPORTED_NODE_PLATFORMS=(
+   linux/arm64
+   linux/s390x
+   linux/ppc64le
++  linux/riscv64
+   windows/amd64
+ )
+ 
+@@ -47,6 +49,7 @@ readonly KUBE_SUPPORTED_CLIENT_PLATFORMS=(
+   linux/arm64
+   linux/s390x
+   linux/ppc64le
++  linux/riscv64
+   darwin/amd64
+   darwin/arm64
+   windows/amd64
+@@ -61,6 +64,7 @@ readonly KUBE_SUPPORTED_TEST_PLATFORMS=(
+   linux/arm64
+   linux/s390x
+   linux/ppc64le
++  linux/riscv64
+   darwin/amd64
+   darwin/arm64
+   windows/amd64
+@@ -435,6 +439,10 @@ kube::golang::set_platform_envs() {
+         export CGO_ENABLED=1
+         export CC=${KUBE_LINUX_S390X_CC:-s390x-linux-gnu-gcc}
+         ;;
++      "linux/riscv64")
++        export CGO_ENABLED=1
++        export CC=${KUBE_LINUX_RISCV64_CC:-riscv64-linux-gnu-gcc}
++        ;;
+     esac
+   fi
+ 
+diff --git a/hack/lib/util.sh b/hack/lib/util.sh
+index 70568f76fa6..0b65b1480a8 100755
+--- a/hack/lib/util.sh
++++ b/hack/lib/util.sh
+@@ -185,8 +185,11 @@ kube::util::host_arch() {
+     ppc64le*)
+       host_arch=ppc64le
+       ;;
++    riscv64*)
++      host_arch=riscv64
++      ;;
+     *)
+-      kube::log::error "Unsupported host arch. Must be x86_64, 386, arm, arm64, s390x or ppc64le."
++      kube::log::error "Unsupported host arch. Must be x86_64, 386, arm, arm64, s390x, ppc64le or riscv64."
+       exit 1
+       ;;
+   esac
+diff --git a/hack/local-up-cluster.sh b/hack/local-up-cluster.sh
+index 83bdd694290..fc4ae0dbe3a 100755
+--- a/hack/local-up-cluster.sh
++++ b/hack/local-up-cluster.sh
+@@ -292,8 +292,11 @@ function detect_arch {
+       ppc64le*)
+         host_arch=ppc64le
+         ;;
++      riscv64*)
++        host_arch=riscv64
++        ;;
+       *)
+-        echo "Unsupported host arch. Must be x86_64, 386, arm, arm64, s390x or ppc64le." >&2
++        echo "Unsupported host arch. Must be x86_64, 386, arm, arm64, s390x, ppc64le or riscv64." >&2
+         exit 1
+         ;;
+     esac
