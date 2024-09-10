@@ -6,10 +6,6 @@ BIN_DIR=$(PWD)/bin
 PATCH_FOLDER=$(PWD)/patches
 REGISTRY=ghcr.io/go-riscv
 
-GOLANG_BRANCH=master
-GOLANG_VERSION=1.21
-GOLANG_IMAGE=$(REGISTRY)/golang:$(GOLANG_VERSION)-unstable
-
 PROTOBUF_BRANCH=23.x
 PROTOBUF_ZIP=protoc-23.4-linux-riscv_64.zip
 
@@ -26,24 +22,37 @@ ETCD_VERSION=3.5
 
 KIND_VERSION=0.22.0
 
-all: golang protoc release kubetools etcd kind-images
+PKG_DIR := $(PWD)/pkg
+PKG_LIST := $(notdir $(wildcard $(PWD)/pkg/*))
+
+.PHONY: all
+all: folders
+	@for folder in $(PKG_LIST); do \
+		if [ -d $(PKG_DIR)/"$$folder" ]; then \
+			cd $(PKG_DIR)/"$$folder" && make all; \
+		fi \
+	done
+
+.PHONY: $(PKG_LIST)
+$(PKG_LIST):
+	@cd $(PKG_DIR)/$@ && make all
+
+.PHONY: distclean
+distclean:
+	@for folder in $(PKG_LIST); do \
+		if [ -d "$$folder" ]; then \
+			cd "$$folder" && make distclean; \
+		fi \
+	done
+	rm -rf $(BUILD_DIR)
+	rm -rf $(BIN_DIR)
+
+
 
 .PHONY: folders
 folders:
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(BIN_DIR)
-
-.PHONY: golang
-golang: folders
-	cd $(BUILD_DIR) && \
-	rm -rf golang && \
-	git clone --branch $(GOLANG_BRANCH) --depth 1 https://github.com/docker-library/golang.git && \
-	cd golang && \
-	for patch in $(PATCH_FOLDER)/golang/*; do \
-		patch -p1 < $$patch; \
-	done && \
-	cd 1.21/unstable && \
-	docker build -t $(GOLANG_IMAGE) .
 
 .PHONY: protoc
 protoc: folders
@@ -196,7 +205,3 @@ app-deploy:
 kind-cluster-delete:
 	$(BIN_DIR)/kind delete cluster
 
-.PHONY: distclean
-distclean:
-	rm -rf $(BUILD_DIR)
-	rm -rf $(BIN_DIR)
