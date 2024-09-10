@@ -10,3 +10,8 @@ nodes:
       local:
         imageRepository: ghcr.io/go-riscv
         imageTag: 3.5-riscv64
+    kubeProxy:
+      featureGates:
+        SupportIPVSProxyMode: false
+- role: worker
+  image: kindest/node:latest
