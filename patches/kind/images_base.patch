@@ -50,7 +50,7 @@ index e9440cb..e52301f 100644
  ARG GO_VERSION
  RUN eval "$(gimme "${GO_VERSION}")" \
 diff --git a/images/base/files/etc/containerd/config.toml b/images/base/files/etc/containerd/config.toml
-index 94ee2f5..b718cd1 100644
+index 94ee2f5..474af95 100644
 --- a/images/base/files/etc/containerd/config.toml
 +++ b/images/base/files/etc/containerd/config.toml
 @@ -34,7 +34,8 @@ version = 2
@@ -124,7 +124,7 @@ index 75e618d..e84d609 100755
  : "${GIMME_KNOWN_CACHE_MAX:=10800}"
  
 diff --git a/images/kindnetd/Dockerfile b/images/kindnetd/Dockerfile
-index 3d69513..dbf003c 100644
+index 3d69513..fd418c0 100644
 --- a/images/kindnetd/Dockerfile
 +++ b/images/kindnetd/Dockerfile
 @@ -14,7 +14,7 @@
@@ -146,7 +146,7 @@ index 3d69513..dbf003c 100644
  COPY --from=0 /_LICENSES/* /LICENSES/
  COPY --chmod=0644 files/LICENSES/* /LICENSES/*
 diff --git a/images/local-path-helper/Dockerfile b/images/local-path-helper/Dockerfile
-index 1bb8845..359cad1 100644
+index 1bb8845..936cce8 100644
 --- a/images/local-path-helper/Dockerfile
 +++ b/images/local-path-helper/Dockerfile
 @@ -15,7 +15,7 @@
@@ -163,11 +163,11 @@ index 1bb8845..359cad1 100644
  
  # copy staged binary + deps + copyright into distroless
 -FROM "gcr.io/distroless/static-debian11"
-+FROM "ghcr.io/go-riscv/distroless/static-unstable"
++FROM "ghcr.io/go-riscv/distroless/static-unstable@sha256:6197e9d4160aed4fe72552e870428aed1d0640661ec4df63a816a9811c31f78f"
  ARG STAGE_DIR="/opt/stage"
  COPY --from=build "${STAGE_DIR}/" /
 diff --git a/images/local-path-provisioner/Dockerfile b/images/local-path-provisioner/Dockerfile
-index 5c14e88..4a75dc2 100644
+index 5c14e88..82335fb 100644
 --- a/images/local-path-provisioner/Dockerfile
 +++ b/images/local-path-provisioner/Dockerfile
 @@ -13,7 +13,7 @@
@@ -201,7 +201,7 @@ index 34d68a8..82cc3e0 100644
  	return true
  }
 diff --git a/pkg/build/nodeimage/const_cni.go b/pkg/build/nodeimage/const_cni.go
-index 480dc6a..1b0690f 100644
+index 480dc6a..11a2241 100644
 --- a/pkg/build/nodeimage/const_cni.go
 +++ b/pkg/build/nodeimage/const_cni.go
 @@ -20,7 +20,7 @@ package nodeimage
@@ -214,7 +214,7 @@ index 480dc6a..1b0690f 100644
  var defaultCNIImages = []string{kindnetdImage}
  
 diff --git a/pkg/build/nodeimage/const_storage.go b/pkg/build/nodeimage/const_storage.go
-index a45313b..570d0a7 100644
+index a45313b..050eaba 100644
 --- a/pkg/build/nodeimage/const_storage.go
 +++ b/pkg/build/nodeimage/const_storage.go
 @@ -25,8 +25,8 @@ NOTE: we have customized it in the following ways:
