@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alpine-echo-server
+spec:
+  selector:
+    matchLabels:
+      app: echo
+  template:
+    metadata:
+      labels:
+        app: echo
+    spec:
+      containers:
+      - name: alpine
+        image: alpine:latest
+        command: ["sh", "-c", "apk add --no-cache netcat-openbsd && while true; do echo 'Hello World' | nc -l 8080; done"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alpine-echo-client
+spec:
+  selector:
+    matchLabels:
+      app: echo-client
+  template:
+    metadata:
+      labels:
+        app: echo-client
+    spec:
+      containers:
+      - name: alpine
+        image: alpine:latest
+        command: ["sh", "-c", "apk add --no-cache netcat-openbsd && sleep infinity"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo
+spec:
+  selector:
+    app: echo
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080

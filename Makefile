@@ -187,6 +187,11 @@ kind-cluster:
 	$(BIN_DIR)/kind load docker-image $(REGISTRY)/local-path-helper:riscv64
 	$(BIN_DIR)/kind load docker-image $(REGISTRY)/local-path-provisioner:riscv64
 
+.PHONY: app-deploy
+app-deploy:
+	# deploy alpine echo server, client and service
+	$(BIN_DIR)/kubectl apply -f config/alpine.yaml
+
 .PHONY: kind-cluster-delete
 kind-cluster-delete:
 	$(BIN_DIR)/kind delete cluster
