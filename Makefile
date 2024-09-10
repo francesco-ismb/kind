@@ -6,24 +6,13 @@ BIN_DIR=$(PWD)/bin
 PATCH_FOLDER=$(PWD)/patches
 REGISTRY=ghcr.io/go-riscv
 
-PROTOBUF_BRANCH=23.x
-PROTOBUF_ZIP=protoc-23.4-linux-riscv_64.zip
-
-RELEASE_BRANCH=v0.16.5
-
-DEBIAN_BASE_VERSION=unstable-v1.0.1
-
-DISTROLESS_REGISTRY=ghcr.io/go-riscv/distroless
-DISTROLESS_IMAGE=static-unstable
-
-DISTROLESS_IPTABLES_BASEIMAGE=debian:unstable-slim
-
 ETCD_VERSION=3.5
 
 KIND_VERSION=0.22.0
 
 PKG_DIR := $(PWD)/pkg
 PKG_LIST := $(notdir $(wildcard $(PWD)/pkg/*))
+PKG_LIST := golang protobuf release
 
 .PHONY: all
 all: folders
@@ -47,64 +36,10 @@ distclean:
 	rm -rf $(BUILD_DIR)
 	rm -rf $(BIN_DIR)
 
-
-
 .PHONY: folders
 folders:
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(BIN_DIR)
-
-.PHONY: protoc
-protoc: folders
-	cd $(BUILD_DIR) && \
-	rm -rf protobuf && \
-	git clone --branch $(PROTOBUF_BRANCH) --depth 1 https://github.com/protocolbuffers/protobuf.git && \
-	cd protobuf && \
-	for patch in $(PATCH_FOLDER)/protoc/*; do \
-		patch -p1 < $$patch; \
-	done && \
-	bazel build //pkg:protoc_release && \
-	cp bazel-bin/pkg/protoc-23.4-unknown.zip $(BIN_DIR)/$(PROTOBUF_ZIP) && \
-	bazel shutdown
-
-.PHONY: release
-release:
-	docker buildx use default
-	cd $(BUILD_DIR) && \
-		rm -rf release && \
-		git clone --branch $(RELEASE_BRANCH) --depth 1 https://github.com/kubernetes/release.git && \
-	cd release && \
-		for patch in $(PATCH_FOLDER)/release/*; do \
-			patch -p1 < $$patch; \
-		done
-
-	# Build cross
-	echo "Building release image: [cross]" && \
-	mkdir -p $(BUILD_DIR)/release/images/build/cross/precompiled && \
-	cp $(BIN_DIR)/$(PROTOBUF_ZIP) $(BUILD_DIR)/release/images/build/cross/precompiled/ && \
-	cd $(BUILD_DIR)/release/images/build/cross && \
-	PLATFORMS=linux/riscv64 BASEIMAGE=$(GOLANG_IMAGE) REGISTRY=$(REGISTRY) make container
-
-	# Build debian-base
-	echo "Building release image: [debian-base]" && \
-	cd $(BUILD_DIR)/release/images/build/debian-base && \
-	ARCH=riscv64 CONFIG=unstable IMAGE_VERSION=$(DEBIAN_BASE_VERSION) REGISTRY=$(REGISTRY) make build
-
-	# Build go-runner
-	echo "Building release image: [go-runner]" && \
-	cd $(BUILD_DIR)/release/images/build/go-runner && \
-	PLATFORMS=linux/riscv64 DISTROLESS_REGISTRY=$(DISTROLESS_REGISTRY) DISTROLESS_IMAGE=$(DISTROLESS_IMAGE) BUILDER_IMAGE=$(GOLANG_IMAGE) REGISTRY=$(REGISTRY) make container
-
-	echo "Building release image: [setcap]" && \
-	cd $(BUILD_DIR)/release/images/build/setcap && \
-	ARCH=riscv64 CONFIG=unstable DEBIAN_BASE_VERSION=$(DEBIAN_BASE_VERSION) BASE_REGISTRY=$(REGISTRY) REGISTRY=$(REGISTRY) make build
-
-	# Build distroless-iptables
-	echo "Building release image: [distroless-iptables]" && \
-	cd $(BUILD_DIR)/release/images/build/distroless-iptables && \
-	ARCH=riscv64 CONFIG=distroless-unstable BASEIMAGE=$(DISTROLESS_IPTABLES_BASEIMAGE) GORUNNERIMAGE=$(REGISTRY)/go-runner-riscv64:v2.3.1-go1.22.0-bookworm.0 BASE_REGISTRY=$(REGISTRY) REGISTRY=$(REGISTRY) make build
-
-	@echo "Release done"
 
 .PHONY: kube-sources
 kube-sources:

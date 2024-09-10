@@ -1,8 +1,6 @@
 include ../common.mk
 
 BRANCH=master
-VERSION=1.21
-IMAGE=$(REGISTRY)/golang:$(VERSION)-unstable
 
 all: golang
 
