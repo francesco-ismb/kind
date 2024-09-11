@@ -55,3 +55,7 @@ distroless-iptables: $(BUILD_DIR)/release
 	echo "Building release image: [distroless-iptables]" && \
 	cd $(BUILD_DIR)/release/images/build/distroless-iptables && \
 	ARCH=riscv64 CONFIG=distroless-unstable BASEIMAGE=$(DISTROLESS_IPTABLES_BASEIMAGE) GORUNNERIMAGE=$(REGISTRY)/go-runner-riscv64:v2.3.1-go1.22.0-bookworm.0 BASE_REGISTRY=$(REGISTRY) REGISTRY=$(REGISTRY) make build
+
+distclean:
+	rm -rf $(BUILD_DIR)
+	docker rmi $(IMAGE)

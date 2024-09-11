@@ -16,7 +16,19 @@ DISTROLESS_IMAGE=static-unstable
 
 DISTROLESS_IPTABLES_BASEIMAGE=debian:unstable-slim
 
+KUBERNETES_VERSION=1.29
+
 .PHONY: folders
 folders:
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(BIN_DIR)
+
+.PHONY: $(BUILD_DIR)/kubernetes
+$(BUILD_DIR)/kubernetes:
+	cd $(BUILD_DIR) && \
+		rm -rf kubernetes && \
+		git clone --filter=tree:0 --branch release-$(KUBERNETES_VERSION) https://github.com/kubernetes/kubernetes.git && \
+	cd $(BUILD_DIR)/kubernetes && \
+	for patch in $(PWD)/../kubernetes/patches/*; do \
+		patch -p1 < $$patch; \
+	done
