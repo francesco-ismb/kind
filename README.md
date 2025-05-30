@@ -1,8 +1,11 @@
 # Introduction
 
 Kind (Kubernetes in Docker) is a tool that allows to easily bootstrap a Kubernetes cluster in docker containers.
+
 Thanks to go-riscv team that started to port distroless and kind to riscv64 architecture. 
+
 Original project repository: https://github.com/go-riscv/kind
+
 Updated and adapted to Vitamin-V purposes
 
 # Requirements
