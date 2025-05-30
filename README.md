@@ -16,17 +16,23 @@ Updated and adapted to Vitamin-V purposes
 
 # Usage
 Ensure to use docker buildkit
-	export DOCKER_BUILDKIT=1
+
+`export DOCKER_BUILDKIT=1`
 
 Set GO env variables to prefer IPv4
-	export GODEBUG=netdns=go+v4
-	export GOPROXY=https://goproxy.io,direct
+
+`export GODEBUG=netdns=go+v4`
+`export GOPROXY=https://goproxy.io,direct`
+
 To build everything run:
-	make
+
+`make`
 
 Finally, once make will succed, run
-	make kind-cluster
+
+`make kind-cluster`
 
 Add ./bin to PATH and configure kubectl
-	kubectl cluster-info --context kind-kind
+
+`kubectl cluster-info --context kind-kind`
 
